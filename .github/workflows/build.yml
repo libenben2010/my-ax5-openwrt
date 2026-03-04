@@ -56,10 +56,10 @@ jobs:
 
     - name: 加载自定义配置 (.config)
       run: |
-        # 强制将根目录下的 .config 移动到 openwrt 目录下
-        mv .config openwrt/.config
-        cd openwrt
-        # 这一步至关重要，它会根据你 .config 里的 ipq60xx 重新计算所有依赖
+        # 强制使用绝对路径将仓库里的 .config 复制到源码目录，绝不迷路！
+        cp $GITHUB_WORKSPACE/.config $GITHUB_WORKSPACE/openwrt/.config
+        cd $GITHUB_WORKSPACE/openwrt
+        # 应用配置
         make defconfig
 
     - name: 编译固件 (大约需要 2-3 小时)
