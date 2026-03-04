@@ -56,8 +56,10 @@ jobs:
 
     - name: 加载自定义配置 (.config)
       run: |
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+        # 强制将根目录下的 .config 移动到 openwrt 目录下
+        mv .config openwrt/.config
         cd openwrt
+        # 这一步至关重要，它会根据你 .config 里的 ipq60xx 重新计算所有依赖
         make defconfig
 
     - name: 编译固件 (大约需要 2-3 小时)
