@@ -71,9 +71,10 @@ jobs:
     - name: 整理输出文件
       if: steps.compile.outputs.status == 'success'
       run: |
-        cd openwrt/bin/targets/ipq60xx/generic/
+        cd openwrt/bin/targets/*/*
         rm -rf packages
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+        echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 上传固件至 GitHub Artifacts
       if: steps.compile.outputs.status == 'success'
