@@ -77,7 +77,7 @@ jobs:
 
     - name: 上传固件至 GitHub Artifacts
       if: steps.compile.outputs.status == 'success'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ImmortalWrt_Redmi_AX5
         path: ${{ env.FIRMWARE }}
