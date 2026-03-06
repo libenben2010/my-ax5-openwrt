@@ -37,6 +37,14 @@ jobs:
       run: |
         git clone $REPO_URL -b $REPO_BRANCH openwrt
 
+    # 🔧 修复 flex/m4 崩溃（重建 host 工具链）
+    - name: Fix flex/m4 Host Toolchain Issue
+      run: |
+        cd openwrt
+        rm -rf staging_dir/host
+        rm -rf build_dir/host
+        rm -rf tmp
+
     - name: Update Feeds
       run: |
         cd openwrt
@@ -87,6 +95,7 @@ jobs:
         cd openwrt
         make download -j$(nproc)
 
+    # 🧊 GitHub Actions 兼容 swap（dd）
     - name: Add Swap (AX5 Required)
       run: |
         sudo swapoff -a || true
@@ -111,4 +120,25 @@ jobs:
       run: |
         cd openwrt
         cp .config $GITHUB_WORKSPACE/full_config.config
-        ./scripts/diffconfig
+        ./scripts/diffconfig.sh > $GITHUB_WORKSPACE/diffconfig.config
+
+    - name: 清理空间（避免上传失败）
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /usr/local/share/boost
+
+    - name: Upload Firmware
+      uses: actions/upload-artifact@v4
+      with:
+        name: Redmi_AX5_OpenClash_AI
+        path: openwrt/bin/targets/ipq60xx/generic/
+
+    - name: Upload Configs
+      uses: actions/upload-artifact@v4
+      with:
+        name: Build_Configs
+        path: |
+          full_config.config
+          diffconfig.config
