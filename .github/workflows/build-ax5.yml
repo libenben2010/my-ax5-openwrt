@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+
     - name: Checkout
       uses: actions/checkout@v4
 
@@ -26,7 +27,6 @@ jobs:
     - name: Clone ImmortalWrt
       run: |
         git clone $REPO_URL -b $REPO_BRANCH openwrt
-        ln -sf $GITHUB_WORKSPACE/openwrt openwrt
 
     - name: Update Feeds
       run: |
@@ -35,7 +35,7 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    # ✅ 只加载 AX5 Target（防止 fallback）
+    # ✅ 只加载 AX5 Target（防 fallback x86）
     - name: Load AX5 Target
       run: |
         cd openwrt
@@ -69,6 +69,11 @@ jobs:
         CONFIG_PACKAGE_libcares=y
         CONFIG_PACKAGE_libev=y
         EOF
+
+        # ✅ 强制删除 Ruby（否则 AX5 Target 会被干掉 fallback x86）
+        sed -i '/ruby/d' .config
+        sed -i '/libruby/d' .config
+
         make defconfig
 
     - name: Download Packages
@@ -76,10 +81,22 @@ jobs:
         cd openwrt
         make download -j8
 
+    # ✅ ARM64 必须加 Swap，否则 kernel compile 被 OOM kill
+    - name: Add Swap (AX5 Required)
+      run: |
+        sudo fallocate -l 10G /swapfile
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        free -h
+
+    # ✅ 强制生成 AX5 固件（否则可能“成功但没bin”）
     - name: Compile Firmware
       run: |
         cd openwrt
-        make -j$(nproc) || make -j1 V=s
+        make target/linux/clean
+        make target/linux/compile V=s
+        make -j1 V=s
 
     - name: Upload Firmware
       uses: actions/upload-artifact@v4
