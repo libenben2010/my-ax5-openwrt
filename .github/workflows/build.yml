@@ -7,7 +7,7 @@ on:
       ssh:
         description: '是否开启 SSH 远程调试 (true/false)'
         required: false
-        default: 'false'
+        default: 'true'
 
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
