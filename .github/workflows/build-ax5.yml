@@ -13,7 +13,6 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-
     - name: Checkout
       uses: actions/checkout@v4
 
@@ -37,12 +36,12 @@ jobs:
       run: |
         git clone $REPO_URL -b $REPO_BRANCH openwrt
 
-    # 🔧 修复 flex/m4 崩溃（重建 host 工具链）
-    - name: Fix flex/m4 Host Toolchain Issue
+    # 防止残留导致 fallback x86
+    - name: Clean Host & Target (Prevent x86 fallback)
       run: |
         cd openwrt
-        rm -rf staging_dir/host
-        rm -rf build_dir/host
+        rm -rf staging_dir
+        rm -rf build_dir
         rm -rf tmp
 
     - name: Update Feeds
@@ -52,10 +51,21 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Load AX5 Target
+    # 第一次强制锁定 AX5 目标
+    - name: Load AX5 Target (Lock ipq60xx)
       run: |
         cd openwrt
-        cp $GITHUB_WORKSPACE/ax5.config .config
+        cat > .config <<EOF
+        CONFIG_TARGET_ipq60xx=y
+        CONFIG_TARGET_ipq60xx_generic=y
+        CONFIG_TARGET_ipq60xx_generic_DEVICE_redmi_ax5=y
+        EOF
+
+        # 合并你的 ax5.config
+        if [ -f "$GITHUB_WORKSPACE/ax5.config" ]; then
+          cat "$GITHUB_WORKSPACE/ax5.config" >> .config
+        fi
+
         make defconfig
 
     - name: Add OpenClash + AI API Packages
@@ -85,18 +95,36 @@ jobs:
         CONFIG_PACKAGE_libev=y
         EOF
 
-        sed -i '/ruby/d' .config
-        sed -i '/libruby/d' .config
+        # 删除 Ruby，避免奇怪依赖干掉 AX5 目标
+        sed -i '/ruby/d' .config || true
+        sed -i '/libruby/d' .config || true
+
+        # 再次强制锁定 AX5，防止 defconfig 过程中 fallback
+        cat >> .config <<EOF
+        CONFIG_TARGET_ipq60xx=y
+        CONFIG_TARGET_ipq60xx_generic=y
+        CONFIG_TARGET_ipq60xx_generic_DEVICE_redmi_ax5=y
+        EOF
 
         make defconfig
+
+    - name: Verify Target (必须是 ipq60xx)
+      run: |
+        cd openwrt
+        echo "当前 Target 配置："
+        grep CONFIG_TARGET .config || true
+        echo
+        if ! grep -q 'CONFIG_TARGET_ipq60xx=y' .config; then
+          echo "ERROR: Target 未锁定为 ipq60xx，已 fallback 到其他架构，终止构建。"
+          exit 1
+        fi
 
     - name: Download Packages
       run: |
         cd openwrt
         make download -j$(nproc)
 
-    # 🧊 GitHub Actions 兼容 swap（dd）
-    - name: Add Swap (AX5 Required)
+    - name: Add Swap (AX5 Required, GitHub Actions 兼容)
       run: |
         sudo swapoff -a || true
         sudo rm -f /swapfile || true
@@ -111,34 +139,4 @@ jobs:
         cd openwrt
         echo "⚙️ 编译 kernel（单线程避免 OOM）"
         make target/linux/clean
-        make target/linux/compile -j1 V=s
-
-        echo "🚀 编译全固件（多线程）"
-        make -j$(nproc) V=s
-
-    - name: 输出完整配置（.config + diffconfig）
-      run: |
-        cd openwrt
-        cp .config $GITHUB_WORKSPACE/full_config.config
-        ./scripts/diffconfig.sh > $GITHUB_WORKSPACE/diffconfig.config
-
-    - name: 清理空间（避免上传失败）
-      run: |
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /opt/ghc
-        sudo rm -rf /usr/local/lib/android
-        sudo rm -rf /usr/local/share/boost
-
-    - name: Upload Firmware
-      uses: actions/upload-artifact@v4
-      with:
-        name: Redmi_AX5_OpenClash_AI
-        path: openwrt/bin/targets/ipq60xx/generic/
-
-    - name: Upload Configs
-      uses: actions/upload-artifact@v4
-      with:
-        name: Build_Configs
-        path: |
-          full_config.config
-          diffconfig.config
+        make
