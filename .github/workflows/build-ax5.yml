@@ -77,3 +77,6 @@ jobs:
         name: immortalwrt-ax5-firmware
         path: openwrt/bin/
         retention-days: 7
+- name: 🚀 强行开启 SSH 远程连接 (死磕红米AX5专用)
+      uses: P3TERX/ssh2actions@main
+      if: always()  # 确保不管前面有没有报错，都会停下来等你
