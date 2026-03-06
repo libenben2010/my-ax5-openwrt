@@ -1,0 +1,88 @@
+name: Build ImmortalWrt Redmi AX5 (OpenClash + AI API)
+
+on:
+  workflow_dispatch:
+
+env:
+  REPO_URL: https://github.com/immortalwrt/immortalwrt
+  REPO_BRANCH: openwrt-23.05
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: 初始化环境
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential clang flex bison g++ gawk \
+        gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
+        python3-distutils rsync unzip zlib1g-dev file wget curl
+
+    - name: Clone ImmortalWrt
+      run: |
+        git clone $REPO_URL -b $REPO_BRANCH openwrt
+        ln -sf $GITHUB_WORKSPACE/openwrt openwrt
+
+    - name: Update Feeds
+      run: |
+        cd openwrt
+        echo "src-git openclash https://github.com/vernesong/OpenClash" >> feeds.conf.default
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    # ✅ 只加载 AX5 Target（防止 fallback）
+    - name: Load AX5 Target
+      run: |
+        cd openwrt
+        cp $GITHUB_WORKSPACE/ax5.config .config
+        make defconfig
+
+    # ✅ 再加载 OpenClash + AI API 必需组件
+    - name: Add OpenClash + AI API Packages
+      run: |
+        cd openwrt
+        cat >> .config <<EOF
+        CONFIG_PACKAGE_luci=y
+        CONFIG_PACKAGE_luci-app-openclash=y
+        CONFIG_PACKAGE_luci-theme-argon=y
+
+        CONFIG_PACKAGE_curl=y
+        CONFIG_PACKAGE_libnghttp2=y
+        CONFIG_PACKAGE_libustream-openssl=y
+        CONFIG_PACKAGE_ca-bundle=y
+
+        CONFIG_PACKAGE_kmod-tun=y
+        CONFIG_PACKAGE_kmod-zram=y
+        CONFIG_PACKAGE_zram-swap=y
+
+        CONFIG_PACKAGE_luci-app-cpufreq=y
+        CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE=y
+
+        CONFIG_PACKAGE_kmod-fast-classifier=y
+        CONFIG_PACKAGE_kmod-shortcut-fe=y
+
+        CONFIG_PACKAGE_libcares=y
+        CONFIG_PACKAGE_libev=y
+        EOF
+        make defconfig
+
+    - name: Download Packages
+      run: |
+        cd openwrt
+        make download -j8
+
+    - name: Compile Firmware
+      run: |
+        cd openwrt
+        make -j$(nproc) || make -j1 V=s
+
+    - name: Upload Firmware
+      uses: actions/upload-artifact@v4
+      with:
+        name: Redmi_AX5_OpenClash_AI
+        path: openwrt/bin/targets/ipq60xx/generic/
