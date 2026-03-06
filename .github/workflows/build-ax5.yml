@@ -20,8 +20,9 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential clang flex bison g++ gawk \
-        gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
-        python3-distutils rsync unzip zlib1g-dev file wget curl ccache
+          gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
+          python3-distutils rsync unzip zlib1g-dev file wget curl ccache \
+          libelf-dev ecj fastjar java-propose-classpath
 
     - name: 启用 ccache
       run: |
@@ -29,49 +30,49 @@ jobs:
         echo 'export CXX="ccache g++"' >> ~/.bashrc
         echo 'export PATH="/usr/lib/ccache:$PATH"' >> ~/.bashrc
         source ~/.bashrc
-        ccache -M 2G
+        ccache -M 4G
         ccache -s
+
+    - name: 设置时区
+      run: |
+        sudo timedatectl set-timezone "$TZ" || true
 
     - name: Clone ImmortalWrt
       run: |
         git clone $REPO_URL -b $REPO_BRANCH openwrt
 
-    # 防止残留导致 fallback x86
-    - name: Clean Host & Target (Prevent x86 fallback)
+    - name: 清理可能残留的构建目录（防止奇怪 fallback）
       run: |
         cd openwrt
-        rm -rf staging_dir
-        rm -rf build_dir
-        rm -rf tmp
+        rm -rf staging_dir build_dir tmp || true
 
-    - name: Update Feeds
+    - name: Update & Install Feeds
       run: |
         cd openwrt
         echo "src-git openclash https://github.com/vernesong/OpenClash" >> feeds.conf.default
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    # 第一次强制锁定 AX5 目标
-    - name: Load AX5 Target (Lock ipq60xx)
+    - name: 锁定 Redmi AX5 目标（qualcommax ipq60xx）
       run: |
         cd openwrt
         cat > .config <<EOF
-        CONFIG_TARGET_ipq60xx=y
-        CONFIG_TARGET_ipq60xx_generic=y
-        CONFIG_TARGET_ipq60xx_generic_DEVICE_redmi_ax5=y
+        CONFIG_TARGET_qualcommax=y
+        CONFIG_TARGET_qualcommax_ipq60xx=y
+        CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_redmi_ax5=y
         EOF
 
-        # 合并你的 ax5.config
+        # 如果你有自定义 ax5.config，这里合并
         if [ -f "$GITHUB_WORKSPACE/ax5.config" ]; then
           cat "$GITHUB_WORKSPACE/ax5.config" >> .config
         fi
 
         make defconfig
 
-    - name: Add OpenClash + AI API Packages
+    - name: 添加 OpenClash + AI API 等常用包
       run: |
         cd openwrt
-        cat >> .config <<EOF
+        cat >> .config <<'EOF'
         CONFIG_PACKAGE_luci=y
         CONFIG_PACKAGE_luci-app-openclash=y
         CONFIG_PACKAGE_luci-theme-argon=y
@@ -95,48 +96,71 @@ jobs:
         CONFIG_PACKAGE_libev=y
         EOF
 
-        # 删除 Ruby，避免奇怪依赖干掉 AX5 目标
+        # 删除 Ruby，避免奇怪依赖
         sed -i '/ruby/d' .config || true
         sed -i '/libruby/d' .config || true
 
-        # 再次强制锁定 AX5，防止 defconfig 过程中 fallback
+        # 再次强制锁定 AX5 目标，防止 defconfig 过程中被改写
         cat >> .config <<EOF
-        CONFIG_TARGET_ipq60xx=y
-        CONFIG_TARGET_ipq60xx_generic=y
-        CONFIG_TARGET_ipq60xx_generic_DEVICE_redmi_ax5=y
+        CONFIG_TARGET_qualcommax=y
+        CONFIG_TARGET_qualcommax_ipq60xx=y
+        CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_redmi_ax5=y
         EOF
 
         make defconfig
 
-    - name: Verify Target (必须是 ipq60xx)
+    - name: 验证 Target 必须是 AX5 (qualcommax ipq60xx)
       run: |
         cd openwrt
-        echo "当前 Target 配置："
-        grep CONFIG_TARGET .config || true
+        echo "当前 Target 相关配置："
+        grep CONFIG_TARGET_ .config || true
         echo
-        if ! grep -q 'CONFIG_TARGET_ipq60xx=y' .config; then
-          echo "ERROR: Target 未锁定为 ipq60xx，已 fallback 到其他架构，终止构建。"
+        if ! grep -q 'CONFIG_TARGET_qualcommax_ipq60xx=y' .config; then
+          echo "ERROR: Target 未锁定为 AX5 (qualcommax ipq60xx)，终止构建。"
           exit 1
         fi
 
-    - name: Download Packages
+    - name: 下载依赖包
       run: |
         cd openwrt
-        make download -j$(nproc)
+        make download -j$(nproc) V=s
 
-    - name: Add Swap (AX5 Required, GitHub Actions 兼容)
+    - name: 创建 Swap（GitHub Actions 兼容）
       run: |
         sudo swapoff -a || true
         sudo rm -f /swapfile || true
-        sudo dd if=/dev/zero of=/swapfile bs=1M count=10240
+        sudo dd if=/dev/zero of=/swapfile bs=1M count=12288
         sudo chmod 600 /swapfile
         sudo mkswap /swapfile
         sudo swapon /swapfile
         free -h
 
-    - name: Compile Firmware
+    - name: 编译固件（先 kernel 再全编译，避免 OOM）
       run: |
         cd openwrt
-        echo "⚙️ 编译 kernel（单线程避免 OOM）"
-        make target/linux/clean
-        make
+        echo "⚙️ 先编译 kernel（单线程）"
+        make target/linux/compile -j1 V=s
+        echo "⚙️ 再编译全固件（多线程）"
+        make -j$(nproc) V=s || make -j1 V=s
+
+    - name: 显示磁盘使用情况
+      if: always()
+      run: |
+        df -h
+        cd openwrt
+        du -sh *
+
+    - name: 导出 config 与 diffconfig
+      run: |
+        cd openwrt
+        ./scripts/diffconfig.sh > diffconfig
+        cp .config bin/ || true
+        cp diffconfig bin/ || true
+
+    - name: 上传固件与配置（Artifacts）
+      uses: actions/upload-artifact@v4
+      with:
+        name: immortalwrt-ax5-firmware
+        path: |
+          openwrt/bin/
+        retention-days: 7
