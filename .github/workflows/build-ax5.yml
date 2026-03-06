@@ -34,14 +34,13 @@ jobs:
         ccache -s
 
     - name: 设置时区
-      run: |
-        sudo timedatectl set-timezone "$TZ" || true
+      run: sudo timedatectl set-timezone "$TZ" || true
 
     - name: Clone ImmortalWrt
       run: |
         git clone $REPO_URL -b $REPO_BRANCH openwrt
 
-    - name: 清理可能残留的构建目录（防止奇怪 fallback）
+    - name: 清理可能残留的构建目录（防止 fallback）
       run: |
         cd openwrt
         rm -rf staging_dir build_dir tmp || true
@@ -62,7 +61,7 @@ jobs:
         CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_redmi_ax5=y
         EOF
 
-        # 如果你有自定义 ax5.config，这里合并
+        # 合并用户自定义 ax5.config
         if [ -f "$GITHUB_WORKSPACE/ax5.config" ]; then
           cat "$GITHUB_WORKSPACE/ax5.config" >> .config
         fi
@@ -100,7 +99,7 @@ jobs:
         sed -i '/ruby/d' .config || true
         sed -i '/libruby/d' .config || true
 
-        # 再次强制锁定 AX5 目标，防止 defconfig 过程中被改写
+        # 再次强制锁定 AX5 目标，防止 defconfig 覆盖
         cat >> .config <<EOF
         CONFIG_TARGET_qualcommax=y
         CONFIG_TARGET_qualcommax_ipq60xx=y
@@ -112,7 +111,7 @@ jobs:
     - name: 验证 Target 必须是 AX5 (qualcommax ipq60xx)
       run: |
         cd openwrt
-        echo "当前 Target 相关配置："
+        echo "当前 Target 配置："
         grep CONFIG_TARGET_ .config || true
         echo
         if ! grep -q 'CONFIG_TARGET_qualcommax_ipq60xx=y' .config; then
@@ -135,20 +134,13 @@ jobs:
         sudo swapon /swapfile
         free -h
 
-    - name: 编译固件（先 kernel 再全编译，避免 OOM）
+    - name: 编译固件（先 kernel 再全编译）
       run: |
         cd openwrt
-        echo "⚙️ 先编译 kernel（单线程）"
+        echo "⚙️ 编译 kernel（单线程）"
         make target/linux/compile -j1 V=s
-        echo "⚙️ 再编译全固件（多线程）"
+        echo "⚙️ 编译全固件（多线程）"
         make -j$(nproc) V=s || make -j1 V=s
-
-    - name: 显示磁盘使用情况
-      if: always()
-      run: |
-        df -h
-        cd openwrt
-        du -sh *
 
     - name: 导出 config 与 diffconfig
       run: |
@@ -161,6 +153,5 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: immortalwrt-ax5-firmware
-        path: |
-          openwrt/bin/
+        path: openwrt/bin/
         retention-days: 7
