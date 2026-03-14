@@ -27,13 +27,19 @@ jobs:
       run: |
         git clone $REPO_URL -b $REPO_BRANCH openwrt
 
-    - name: 添加 feed 源（必须在 clone 之后）
+    - name: 强制替换 feeds.conf.default（关键步骤）
       run: |
         cd openwrt
-        git config --global http.postBuffer 524288000
-        echo "src-git passwall https://github.com/xiaorouji/openwrt-passwall;main" >> feeds.conf.default
-        echo "src-git ddnsgo https://github.com/sirpdboy/luci-app-ddns-go;master" >> feeds.conf.default
-        echo "src-git turboacc https://github.com/chenmozhijin/turboacc;master" >> feeds.conf.default
+        rm -f feeds.conf.default
+        cat > feeds.conf.default <<EOF
+src-git packages https://github.com/immortalwrt/packages
+src-git luci https://github.com/immortalwrt/luci
+src-git routing https://github.com/openwrt/routing
+src-git telephony https://github.com/openwrt/telephony
+src-git passwall https://github.com/xiaorouji/openwrt-passwall;main
+src-git ddnsgo https://github.com/sirpdboy/luci-app-ddns-go;master
+src-git turboacc https://github.com/chenmozhijin/turboacc;master
+EOF
 
     - name: 更新 feeds
       run: |
