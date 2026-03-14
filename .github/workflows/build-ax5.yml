@@ -16,6 +16,14 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
+    - name: 清理磁盘空间 (释放供编译使用的空间)
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        sudo apt-get clean
+
     - name: 初始化编译环境
       run: |
         sudo apt-get update
@@ -27,7 +35,7 @@ jobs:
       run: |
         git clone $REPO_URL -b $REPO_BRANCH openwrt
 
-    - name: 更新 feeds
+    - name: 更新 feeds (使用官方默认源)
       run: |
         cd openwrt
         ./scripts/feeds update -a
@@ -44,8 +52,10 @@ jobs:
         cd openwrt
         make download -j8
 
-    - name: 创建 Swap（防止 OOM）
+    - name: 创建 Swap (先卸载旧的，再创建新的防止 OOM)
       run: |
+        sudo swapoff -a
+        sudo rm -f /swapfile
         sudo fallocate -l 10G /swapfile
         sudo chmod 600 /swapfile
         sudo mkswap /swapfile
