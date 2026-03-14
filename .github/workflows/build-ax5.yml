@@ -7,6 +7,7 @@ env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
   REPO_BRANCH: openwrt-23.05
   TZ: Asia/Shanghai
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -66,8 +67,8 @@ jobs:
         cd openwrt
         make -j1 V=s
 
-    - name: 上传固件
+    - name: 上传固件 (打包整个 targets 目录防丢)
       uses: actions/upload-artifact@v4
       with:
         name: Redmi_AX5_35MB_Firmware
-        path: openwrt/bin/targets/ipq60xx/generic/
+        path: openwrt/bin/targets/
